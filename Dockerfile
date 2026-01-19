@@ -1,27 +1,22 @@
 FROM ghcr.io/n8n-io/n8n:latest
 
-# --- root: ставим python ---
+# -----------------------------
+# Подготовка каталогов (root)
+# -----------------------------
 USER root
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-     python3 \
-     python3-pip \
-     python3-venv \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /home/node/.n8n \
+  && chown -R node:node /home/node/.n8n
 
-# --- готовим каталоги ---
-RUN mkdir -p /home/node/.n8n /home/node/.npm-cache \
-  && chown -R node:node /home/node/.n8n /home/node/.npm-cache
-
-# --- node user ---
+# -----------------------------
+# Установка JS-зависимостей
+# -----------------------------
 USER node
 ENV HOME=/home/node
-ENV NPM_CONFIG_CACHE=/home/node/.npm-cache
 WORKDIR /home/node/.n8n
 
-# --- валидный package.json (npm init в .n8n нельзя) ---
+# ВАЖНО: npm init в .n8n делать нельзя (invalid name),
+# поэтому создаём package.json вручную
 RUN if [ ! -f package.json ]; then \
       printf '%s\n' \
         '{' \
@@ -33,9 +28,11 @@ RUN if [ ! -f package.json ]; then \
         '}' > package.json; \
     fi
 
-# --- JS зависимости ---
+# Устанавливаем pdf-lib локально
 RUN npm install --omit=dev --no-fund --no-audit pdf-lib \
   && npm cache clean --force
 
-# --- финальный workdir ---
+# -----------------------------
+# Возвращаем рабочую директорию
+# -----------------------------
 WORKDIR /home/node
