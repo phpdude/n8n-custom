@@ -2,11 +2,11 @@ FROM ghcr.io/n8n-io/n8n:latest
 
 ENV GENERIC_TIMEZONE="Europe/Madrid" \
     N8N_PROXY_HOPS="1" \
-    NODE_FUNCTION_ALLOW_EXTERNAL="pdf-lib" \
-    N8N_LOG_LEVEL="debug" \
+    NODE_FUNCTION_ALLOW_EXTERNAL="pdf-lib"
+
+ENV N8N_LOG_LEVEL="debug" \
     N8N_LOG_FORMAT="json" \
-    N8N_LOG_OUTPUT="console" \
-    NO_COLOR="1"
+    N8N_LOG_OUTPUT="console"
 
 USER root
 
