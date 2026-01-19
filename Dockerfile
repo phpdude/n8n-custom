@@ -21,20 +21,14 @@ RUN set -eux; \
   npm cache clean --force >/dev/null 2>&1; \
   test -f /usr/local/lib/node_modules/pdf-lib/package.json
 
-# ---- bring python runtime from donor ----
-# Copy python binaries
-COPY --from=py /usr/local/bin/python3 /usr/local/bin/python3
-COPY --from=py /usr/local/bin/python /usr/local/bin/python
-COPY --from=py /usr/local/bin/pip3 /usr/local/bin/pip3
-COPY --from=py /usr/local/bin/pip /usr/local/bin/pip
-
-# Copy python stdlib + dyn libs (musl-compatible because donor is alpine)
-COPY --from=py /usr/local/lib/python3.13 /usr/local/lib/python3.13
-COPY --from=py /usr/local/lib/libpython3.13.so* /usr/local/lib/ 2>/dev/null || true
-
-# Some builds place libpython elsewhere; also copy /usr/lib just in case (small in alpine)
+# Просто переносим python runtime
+COPY --from=py /usr/local/ /usr/local/
 COPY --from=py /usr/lib/ /usr/lib/
 
+RUN set -eux; \
+  python3 --version; \
+  python --version; \
+  pip3 --version
 # Smoke test
 RUN set -eux; \
   python3 --version; \
