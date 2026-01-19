@@ -15,4 +15,10 @@ RUN set -eux; \
   npm cache clean --force >/dev/null 2>&1; \
   test -f /usr/local/lib/node_modules/pdf-lib/package.json
 
+# Python для internal python runner
+RUN set -eux; \
+  apk add --no-cache python3 py3-pip; \
+  ln -sf python3 /usr/bin/python; \
+  python3 --version
+  
 USER node
