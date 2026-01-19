@@ -1,3 +1,9 @@
+# ---- stage: python donor (alpine/musl) ----
+FROM python:3.13-alpine AS py
+
+# (опционально) убедимся что python есть
+RUN python3 --version
+
 FROM ghcr.io/n8n-io/n8n:latest
 
 ENV GENERIC_TIMEZONE="Europe/Madrid" \
@@ -15,10 +21,23 @@ RUN set -eux; \
   npm cache clean --force >/dev/null 2>&1; \
   test -f /usr/local/lib/node_modules/pdf-lib/package.json
 
-# Python для internal python runner
+# ---- bring python runtime from donor ----
+# Copy python binaries
+COPY --from=py /usr/local/bin/python3 /usr/local/bin/python3
+COPY --from=py /usr/local/bin/python /usr/local/bin/python
+COPY --from=py /usr/local/bin/pip3 /usr/local/bin/pip3
+COPY --from=py /usr/local/bin/pip /usr/local/bin/pip
+
+# Copy python stdlib + dyn libs (musl-compatible because donor is alpine)
+COPY --from=py /usr/local/lib/python3.13 /usr/local/lib/python3.13
+COPY --from=py /usr/local/lib/libpython3.13.so* /usr/local/lib/ 2>/dev/null || true
+
+# Some builds place libpython elsewhere; also copy /usr/lib just in case (small in alpine)
+COPY --from=py /usr/lib/ /usr/lib/
+
+# Smoke test
 RUN set -eux; \
-  apk add --no-cache python3 py3-pip; \
-  ln -sf python3 /usr/bin/python; \
-  python3 --version
+  python3 --version; \
+  python --version
   
 USER node
