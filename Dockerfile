@@ -1,7 +1,7 @@
 FROM ghcr.io/n8n-io/n8n:latest
 
 # ----------------------------
-# Global env (applies to ALL processes, including task-runner)
+# Global env (applies to ALL processes)
 # ----------------------------
 ENV GENERIC_TIMEZONE="Europe/Madrid" \
     N8N_PROXY_HOPS="1" \
@@ -15,10 +15,9 @@ ENV GENERIC_TIMEZONE="Europe/Madrid" \
     NO_COLOR="1"
 
 # ----------------------------
-# Install external npm deps in a clean, stable location
+# Install external npm deps in stable location
 # ----------------------------
 USER root
-
 RUN set -eux; \
     mkdir -p /opt/n8n-external; \
     chown -R node:node /opt/n8n-external
@@ -32,28 +31,6 @@ RUN set -eux; \
     npm cache clean --force >/dev/null 2>&1; \
     node -e "require('pdf-lib'); console.log('pdf-lib OK (build time)')"
 
-# ----------------------------
-# Ensure env is present for entrypoint + child processes
-# (task-runner gets the same NODE_PATH etc.)
-# ----------------------------
-USER root
-RUN printf '%s\n' \
-'#!/bin/sh' \
-'export GENERIC_TIMEZONE="${GENERIC_TIMEZONE}"' \
-'export N8N_PROXY_HOPS="${N8N_PROXY_HOPS}"' \
-'export NODE_FUNCTION_ALLOW_EXTERNAL="${NODE_FUNCTION_ALLOW_EXTERNAL}"' \
-'export NODE_PATH="${NODE_PATH}"' \
-'export PATH="${PATH}"' \
-'export N8N_LOG_LEVEL="${N8N_LOG_LEVEL}"' \
-'export N8N_LOG_FORMAT="${N8N_LOG_FORMAT}"' \
-'export N8N_LOG_OUTPUT="${N8N_LOG_OUTPUT}"' \
-'export CODE_ENABLE_STDOUT="${CODE_ENABLE_STDOUT}"' \
-'export NO_COLOR="${NO_COLOR}"' \
-'exec /docker-entrypoint.sh "$@"' \
-> /custom-entrypoint.sh && chmod +x /custom-entrypoint.sh
-
-USER node
 WORKDIR /home/node
 
-ENTRYPOINT ["/custom-entrypoint.sh"]
-CMD ["n8n"]
+# НЕ задаём ENTRYPOINT и CMD — оставляем как в базовом образе
