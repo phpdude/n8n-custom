@@ -1,22 +1,17 @@
 FROM ghcr.io/n8n-io/n8n:latest
 
-# ----------------------------
 # Global env (applies to ALL processes)
-# ----------------------------
 ENV GENERIC_TIMEZONE="Europe/Madrid" \
     N8N_PROXY_HOPS="1" \
     NODE_FUNCTION_ALLOW_EXTERNAL="pdf-lib" \
     NODE_PATH="/opt/n8n-external/node_modules" \
-    PATH="/home/node/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    N8N_RUNNERS_NODE_PATH="/opt/n8n-external/node_modules" \
     N8N_LOG_LEVEL="debug" \
     N8N_LOG_FORMAT="json" \
     N8N_LOG_OUTPUT="console" \
     CODE_ENABLE_STDOUT="true" \
     NO_COLOR="1"
 
-# ----------------------------
-# Install external npm deps in stable location
-# ----------------------------
 USER root
 RUN set -eux; \
     mkdir -p /opt/n8n-external; \
@@ -32,5 +27,3 @@ RUN set -eux; \
     node -e "require('pdf-lib'); console.log('pdf-lib OK (build time)')"
 
 WORKDIR /home/node
-
-# НЕ задаём ENTRYPOINT и CMD — оставляем как в базовом образе
