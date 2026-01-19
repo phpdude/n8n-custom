@@ -2,15 +2,23 @@ FROM ghcr.io/n8n-io/n8n:latest
 
 USER root
 
-# 1) Ставим pdf-lib туда, откуда внутренний task-runner реально резолвит require()
-#    Node resolution идет от dist/start.js -> ../ (package root) -> ./node_modules
-RUN set -eux; \
-  RUNNER_DIR="/usr/local/lib/node_modules/n8n/node_modules/@n8n/task-runner"; \
-  test -d "$RUNNER_DIR" || (echo "Task runner dir not found: $RUNNER_DIR" && exit 1); \
-  npm install --prefix "$RUNNER_DIR" --omit=dev --no-fund --no-audit pdf-lib; \
-  node -e "process.chdir('$RUNNER_DIR/dist'); require('pdf-lib'); console.log('pdf-lib OK from task-runner/dist')"
+# Папка для внешних модулей (не трогаем n8n monorepo)
+RUN mkdir -p /opt/n8n-external/node_modules \
+  && chown -R node:node /opt/n8n-external
 
 USER node
+ENV HOME=/home/node
 
-# (не обязательно) можно задать NODE_PATH, но после установки выше оно уже не нужно
-# ENV NODE_PATH=/home/node/.n8n/node_modules
+# Ставим pdf-lib в /opt/n8n-external/node_modules
+RUN npm_config_prefix=/opt/n8n-external \
+  npm install --omit=dev --no-fund --no-audit --prefix /opt/n8n-external pdf-lib \
+  && node -p "require('/opt/n8n-external/node_modules/pdf-lib') && 'pdf-lib installed'" >/dev/null
+
+# ВАЖНО: добавляем путь, который увидит и n8n, и task-runner
+ENV NODE_PATH=/opt/n8n-external/node_modules
+
+# (опционально) чтобы Code node тоже видел
+ENV NODE_FUNCTION_ALLOW_EXTERNAL=pdf-lib
+
+# вернуть дефолтный workdir
+WORKDIR /home/node
