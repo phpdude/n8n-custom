@@ -7,6 +7,7 @@ FROM ghcr.io/n8n-io/n8n:latest
 
 ENV GENERIC_TIMEZONE="Europe/Madrid" \
     N8N_PROXY_HOPS="1" \
+    N8N_RUNNERS_ENABLED="false" \
     \
     # Code node libs: как у тебя было
     NODE_FUNCTION_ALLOW_EXTERNAL="*" \
