@@ -62,6 +62,9 @@ RUN set -eux; \
   > /usr/local/bin/n8n-prestart.sh; \
   chmod +x /usr/local/bin/n8n-prestart.sh
 
+COPY scripts/strict-merge.js /opt/strict-merge.js
+RUN chmod +x /opt/strict-merge.js
+
 USER node
 
 ENTRYPOINT ["/usr/local/bin/n8n-prestart.sh"]
