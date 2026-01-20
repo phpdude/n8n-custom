@@ -3,7 +3,7 @@ FROM python:3.13-alpine AS py
 RUN python3 --version
 
 # ---- main ----
-FROM ghcr.io/n8n-io/n8n:latest
+FROM ghcr.io/n8n-io/n8n:2.4.4
 
 ENV GENERIC_TIMEZONE="Europe/Madrid" \
     N8N_PROXY_HOPS="1" \
