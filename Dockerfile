@@ -8,7 +8,7 @@ FROM ghcr.io/n8n-io/n8n:latest
 
 ENV GENERIC_TIMEZONE="Europe/Madrid" \
     N8N_PROXY_HOPS="1" \
-    NODE_FUNCTION_ALLOW_EXTERNAL="pdf-lib"
+    NODE_FUNCTION_ALLOW_EXTERNAL="pdf-lib,@pdf-lib/fontkit"
 
 # ENV N8N_LOG_LEVEL="debug" \
 #     N8N_LOG_FORMAT="json" \
@@ -17,9 +17,10 @@ ENV GENERIC_TIMEZONE="Europe/Madrid" \
 USER root
 
 RUN set -eux; \
-  npm install -g --omit=dev --no-fund --no-audit --prefix /usr/local pdf-lib; \
+  npm install -g --omit=dev --no-fund --no-audit --prefix /usr/local pdf-lib @pdf-lib/fontkit; \
   npm cache clean --force >/dev/null 2>&1; \
-  test -f /usr/local/lib/node_modules/pdf-lib/package.json
+  test -f /usr/local/lib/node_modules/pdf-lib/package.json; \
+  test -f /usr/local/lib/node_modules/@pdf-lib/fontkit/package.json
 
 # Просто переносим python runtime
 COPY --from=py /usr/local/ /usr/local/
