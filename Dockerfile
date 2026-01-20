@@ -8,7 +8,7 @@ FROM ghcr.io/n8n-io/n8n:latest
 
 ENV GENERIC_TIMEZONE="Europe/Madrid" \
     N8N_PROXY_HOPS="1" \
-    NODE_FUNCTION_ALLOW_EXTERNAL="pdf-lib,@pdf-lib/fontkit,xlsx"
+    NODE_FUNCTION_ALLOW_EXTERNAL="pdf-lib,@pdf-lib/fontkit,xlsx,@custom-js/n8n-nodes-pdf-toolkit.html2Pdf"
 
 # ENV N8N_LOG_LEVEL="debug" \
 #     N8N_LOG_FORMAT="json" \
@@ -17,7 +17,7 @@ ENV GENERIC_TIMEZONE="Europe/Madrid" \
 USER root
 
 RUN set -eux; \
-  npm install -g --omit=dev --no-fund --no-audit --prefix /usr/local pdf-lib @pdf-lib/fontkit xlsx; \
+  npm install -g --omit=dev --no-fund --no-audit --prefix /usr/local pdf-lib @pdf-lib/fontkit xlsx @custom-js/n8n-nodes-pdf-toolkit.html2Pdf; \
   npm cache clean --force >/dev/null 2>&1; \
   test -f /usr/local/lib/node_modules/pdf-lib/package.json; \
   test -f /usr/local/lib/node_modules/@pdf-lib/fontkit/package.json
