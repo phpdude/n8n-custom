@@ -10,6 +10,7 @@ ENV GENERIC_TIMEZONE="Europe/Madrid" \
     N8N_RUNNERS_ENABLED="true" \
     NODES_EXCLUDE="[]" \
     N8N_FILESYSTEM_ALLOWED_PATHS="/home/node/.n8n/tmp,/tmp/merge" \
+    N8N_RESTRICT_FILE_ACCESS_TO="" \
     \
     # Code node libs: как у тебя было
     NODE_FUNCTION_ALLOW_EXTERNAL="*" \
