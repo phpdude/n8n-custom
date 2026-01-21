@@ -2,6 +2,7 @@
 'use strict';
 
 const fs = require('fs/promises');
+const fss = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
 
@@ -9,12 +10,7 @@ const A4_W = 595.28;
 const A4_H = 841.89;
 const MARGIN = 24;
 
-function die(msg, err) {
-  const extra = err ? `\n${err.stack || err}` : '';
-  process.stderr.write(`[strict-merge] ERROR: ${msg}${extra}\n`);
-  process.exit(1);
-}
-
+// --- args ---
 function parseArgs(argv) {
   const out = {};
   for (let i = 2; i < argv.length; i++) {
@@ -27,8 +23,9 @@ function parseArgs(argv) {
   return out;
 }
 
+// --- sniffers ---
 function isPdf(buf) {
-  return buf.length >= 5 && buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46 && buf[4] === 0x2d;
+  return buf.length >= 5 && buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46 && buf[4] === 0x2d; // %PDF-
 }
 function isPng(buf) {
   return buf.length >= 8 &&
@@ -48,8 +45,7 @@ async function listSortedFiles(dir) {
 }
 
 function addA4Page(doc) {
-  const page = doc.addPage([A4_W, A4_H]);
-  return page;
+  return doc.addPage([A4_W, A4_H]);
 }
 
 function fitToA4(imgW, imgH) {
@@ -67,73 +63,116 @@ async function ensurePdfReadable(pdfBytes, name) {
   try {
     await PDFDocument.load(pdfBytes, { ignoreEncryption: false });
   } catch (e) {
-    die(`PDF not readable or encrypted: ${name}`, e);
+    const err = new Error(`PDF not readable or encrypted: ${name}`);
+    err.cause = e;
+    throw err;
   }
 }
 
+// --- cleanup helpers ---
+async function rmrf(p) {
+  if (!p) return;
+  await fs.rm(p, { recursive: true, force: true }).catch(() => {});
+}
+
+// --- main ---
 (async () => {
   const args = parseArgs(process.argv);
-  const inDir = args.dir;
-  const outPath = args.out;
 
-  if (!inDir) die('Missing --dir');
-  if (!outPath) die('Missing --out');
+  // base dir like /tmp/pdf-merge/<runId>
+  const baseDir = args.base || null;
 
-  const files = await listSortedFiles(inDir);
-  if (!files.length) die(`No input files in: ${inDir}`);
+  // if you pass --dir, use it, else baseDir/in
+  const inDir = args.dir || (baseDir ? path.join(baseDir, 'in') : null);
 
-  const outPdf = await PDFDocument.create();
+  // if you pass --out, use it, else baseDir/out/merged.pdf
+  const outPath = args.out || (baseDir ? path.join(baseDir, 'out', 'merged.pdf') : null);
 
-  for (const fp of files) {
-    const name = path.basename(fp);
-    const st = await fs.stat(fp).catch((e) => die(`Input not found: ${fp}`, e));
-    if (!st.isFile()) die(`Not a file: ${fp}`);
-    if (st.size <= 0) die(`Empty file: ${fp}`);
-    if (st.size > 80 * 1024 * 1024) die(`File too large (>80MB): ${name}`);
+  // if set: prints base64 of merged pdf to stdout (so n8n can pack into binary),
+  // and you MAY choose to not keep the file on disk.
+  const emitBase64 = args.emitBase64 === true || args.emitBase64 === 'true';
 
-    const bytes = await fs.readFile(fp);
+  // if set: cleanup baseDir always (recommended)
+  const cleanup = args.cleanup === true || args.cleanup === 'true';
 
-    if (isPdf(bytes)) {
-      await ensurePdfReadable(bytes, name);
-      const src = await PDFDocument.load(bytes, { ignoreEncryption: false }).catch((e) => die(`Failed to load PDF: ${name}`, e));
-      const pages = await outPdf.copyPages(src, src.getPageIndices()).catch((e) => die(`Failed to copy PDF pages: ${name}`, e));
-      for (const p of pages) outPdf.addPage(p);
-      continue;
+  if (!inDir) throw new Error('Missing --base or --dir');
+  if (!outPath && !emitBase64) throw new Error('Missing --out (or use --emitBase64 true)');
+
+  // ALWAYS cleanup on any exit path if cleanup enabled
+  try {
+    const files = await listSortedFiles(inDir);
+    if (!files.length) throw new Error(`No input files in: ${inDir}`);
+
+    const outPdf = await PDFDocument.create();
+
+    for (const fp of files) {
+      const name = path.basename(fp);
+      const st = await fs.stat(fp);
+      if (!st.isFile()) throw new Error(`Not a file: ${fp}`);
+      if (st.size <= 0) throw new Error(`Empty file: ${fp}`);
+      if (st.size > 80 * 1024 * 1024) throw new Error(`File too large (>80MB): ${name}`);
+
+      const bytes = await fs.readFile(fp);
+
+      if (isPdf(bytes)) {
+        await ensurePdfReadable(bytes, name);
+        const src = await PDFDocument.load(bytes, { ignoreEncryption: false });
+        const pages = await outPdf.copyPages(src, src.getPageIndices());
+        for (const p of pages) outPdf.addPage(p);
+        continue;
+      }
+
+      if (isJpeg(bytes)) {
+        const img = await outPdf.embedJpg(bytes);
+        const { width, height } = img.size();
+        if (!(width > 0 && height > 0)) throw new Error(`Bad JPG dimensions: ${name} ${width}x${height}`);
+        const page = addA4Page(outPdf);
+        const { x, y, w, h } = fitToA4(width, height);
+        page.drawImage(img, { x, y, width: w, height: h });
+        continue;
+      }
+
+      if (isPng(bytes)) {
+        const img = await outPdf.embedPng(bytes);
+        const { width, height } = img.size();
+        if (!(width > 0 && height > 0)) throw new Error(`Bad PNG dimensions: ${name} ${width}x${height}`);
+        const page = addA4Page(outPdf);
+        const { x, y, w, h } = fitToA4(width, height);
+        page.drawImage(img, { x, y, width: w, height: h });
+        continue;
+      }
+
+      throw new Error(`Unsupported type (need PDF/PNG/JPEG): ${name}`);
     }
 
-    if (isJpeg(bytes)) {
-      const img = await outPdf.embedJpg(bytes).catch((e) => die(`Failed to embed JPG: ${name}`, e));
-      const { width, height } = img.size();
-      if (!(width > 0 && height > 0)) die(`Bad JPG dimensions: ${name} ${width}x${height}`);
-      const page = addA4Page(outPdf);
-      const { x, y, w, h } = fitToA4(width, height);
-      page.drawImage(img, { x, y, width: w, height: h });
-      continue;
+    const pageCount = outPdf.getPageCount();
+    if (pageCount <= 0) throw new Error('Output has 0 pages');
+
+    const outBytes = await outPdf.save();
+
+    // Write to disk (atomic), unless you only want base64 and no file
+    if (outPath) {
+      await fs.mkdir(path.dirname(outPath), { recursive: true });
+      const tmp = `${outPath}.tmp-${process.pid}`;
+      await fs.writeFile(tmp, outBytes);
+      await fs.rename(tmp, outPath);
     }
 
-    if (isPng(bytes)) {
-      const img = await outPdf.embedPng(bytes).catch((e) => die(`Failed to embed PNG: ${name}`, e));
-      const { width, height } = img.size();
-      if (!(width > 0 && height > 0)) die(`Bad PNG dimensions: ${name} ${width}x${height}`);
-      const page = addA4Page(outPdf);
-      const { x, y, w, h } = fitToA4(width, height);
-      page.drawImage(img, { x, y, width: w, height: h });
-      continue;
+    if (emitBase64) {
+      // ONLY base64 to stdout (strict, no extra logs)
+      process.stdout.write(Buffer.from(outBytes).toString('base64'));
+    } else {
+      process.stdout.write(`[strict-merge] OK pages=${pageCount} bytes=${outBytes.length} out=${outPath}\n`);
     }
 
-    die(`Unsupported type (need PDF/PNG/JPEG): ${name}`);
+    process.exit(0);
+  } catch (e) {
+    // strict fail
+    process.stderr.write(`[strict-merge] ERROR: ${String(e?.stack || e)}\n`);
+    process.exitCode = 1;
+  } finally {
+    if (cleanup && baseDir) {
+      await rmrf(baseDir);
+    }
   }
-
-  const pageCount = outPdf.getPageCount();
-  if (pageCount <= 0) die('Output has 0 pages');
-
-  const outBytes = await outPdf.save().catch((e) => die('Failed to save output PDF', e));
-
-  await fs.mkdir(path.dirname(outPath), { recursive: true });
-  const tmp = `${outPath}.tmp-${process.pid}`;
-  await fs.writeFile(tmp, outBytes).catch((e) => die(`Failed to write tmp: ${tmp}`, e));
-  await fs.rename(tmp, outPath).catch((e) => die(`Failed to rename to output: ${outPath}`, e));
-
-  process.stdout.write(`[strict-merge] OK pages=${pageCount} bytes=${outBytes.length}\n`);
-  process.exit(0);
-})().catch((e) => die('Unhandled top-level error', e));
+})();
