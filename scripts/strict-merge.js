@@ -2,7 +2,6 @@
 'use strict';
 
 const fs = require('fs/promises');
-const fss = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
 
@@ -28,9 +27,11 @@ function isPdf(buf) {
   return buf.length >= 5 && buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46 && buf[4] === 0x2d; // %PDF-
 }
 function isPng(buf) {
-  return buf.length >= 8 &&
+  return (
+    buf.length >= 8 &&
     buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47 &&
-    buf[4] === 0x0D && buf[5] === 0x0A && buf[6] === 0x1A && buf[7] === 0x0A;
+    buf[4] === 0x0D && buf[5] === 0x0A && buf[6] === 0x1A && buf[7] === 0x0A
+  );
 }
 function isJpeg(buf) {
   return buf.length >= 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF;
@@ -69,10 +70,17 @@ async function ensurePdfReadable(pdfBytes, name) {
   }
 }
 
-// --- cleanup helpers ---
-async function rmrf(p) {
+// --- strict rm -rf (no swallowing) ---
+async function rmrfStrict(p) {
   if (!p) return;
-  await fs.rm(p, { recursive: true, force: true }).catch(() => {});
+  try {
+    // force:false => если реально есть проблема с удалением — упадём
+    await fs.rm(p, { recursive: true, force: false });
+  } catch (e) {
+    // ENOENT можно считать "уже удалено" и не валиться
+    if (e && (e.code === 'ENOENT')) return;
+    throw e;
+  }
 }
 
 // --- main ---
@@ -88,17 +96,17 @@ async function rmrf(p) {
   // if you pass --out, use it, else baseDir/out/merged.pdf
   const outPath = args.out || (baseDir ? path.join(baseDir, 'out', 'merged.pdf') : null);
 
-  // if set: prints base64 of merged pdf to stdout (so n8n can pack into binary),
-  // and you MAY choose to not keep the file on disk.
+  // keep but рекомендую НЕ использовать в n8n (лучше читать файл)
   const emitBase64 = args.emitBase64 === true || args.emitBase64 === 'true';
 
-  // if set: cleanup baseDir always (recommended)
-  const cleanup = args.cleanup === true || args.cleanup === 'true';
+  // cleanup только при ошибке (если хочешь вообще вынести cleanup в n8n — не передавай этот флаг)
+  const cleanupOnError = args.cleanupOnError === true || args.cleanupOnError === 'true';
 
   if (!inDir) throw new Error('Missing --base or --dir');
   if (!outPath && !emitBase64) throw new Error('Missing --out (or use --emitBase64 true)');
 
-  // ALWAYS cleanup on any exit path if cleanup enabled
+  let needCleanup = false;
+
   try {
     const files = await listSortedFiles(inDir);
     if (!files.length) throw new Error(`No input files in: ${inDir}`);
@@ -158,21 +166,33 @@ async function rmrf(p) {
       await fs.rename(tmp, outPath);
     }
 
+    const fileSize = outBytes.length;
+
     if (emitBase64) {
-      // ONLY base64 to stdout (strict, no extra logs)
+      // строгий stdout без логов
       process.stdout.write(Buffer.from(outBytes).toString('base64'));
     } else {
-      process.stdout.write(`[strict-merge] OK pages=${pageCount} bytes=${outBytes.length} out=${outPath}\n`);
+      // ОДНА строка JSON для n8n
+      const payload = {
+        ok: true,
+        pages: pageCount,
+        fileSize,
+        outPath: outPath || null,
+        baseDir: baseDir || null,
+        inDir,
+      };
+      process.stdout.write(JSON.stringify(payload));
     }
 
     process.exit(0);
   } catch (e) {
-    // strict fail
+    needCleanup = true;
     process.stderr.write(`[strict-merge] ERROR: ${String(e?.stack || e)}\n`);
     process.exitCode = 1;
   } finally {
-    if (cleanup && baseDir) {
-      await rmrf(baseDir);
+    if (cleanupOnError && needCleanup && baseDir) {
+      // тут пусть реально падает, чтобы было видно проблему cleanup
+      await rmrfStrict(baseDir);
     }
   }
 })();
